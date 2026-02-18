@@ -5,7 +5,13 @@ import UpgradeBanner from "@/components/generator/UpgradeBanner";
 
 export default async function GeneratorPage() {
   const { userId } = await auth();
-  const userIsPro = userId ? await isPro(userId) : false;
+
+  let userIsPro = false;
+  try {
+    userIsPro = userId ? await isPro(userId) : false;
+  } catch (err) {
+    console.error("Failed to check entitlement:", err);
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">

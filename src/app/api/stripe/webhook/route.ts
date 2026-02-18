@@ -33,62 +33,72 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Webhook Error: ${message}` }, { status: 400 });
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const clerkUserId = session.metadata?.clerkUserId;
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const clerkUserId = session.metadata?.clerkUserId;
 
-    if (clerkUserId && session.subscription) {
-      const subscription = await stripe.subscriptions.retrieve(
-        session.subscription as string,
-      );
-      const periodEnd = getPeriodEnd(subscription);
+      if (!clerkUserId) {
+        console.error("Webhook: missing clerkUserId in checkout session metadata");
+        return NextResponse.json({ error: "Missing user metadata" }, { status: 400 });
+      }
 
-      await prisma.userEntitlement.upsert({
-        where: { clerkUserId },
-        create: {
-          clerkUserId,
-          isPro: true,
-          stripeCustomerId: session.customer as string,
-          stripeSubscriptionId: subscription.id,
-          stripeStatus: subscription.status,
-          currentPeriodEnd: periodEnd,
-        },
-        update: {
-          isPro: true,
-          stripeCustomerId: session.customer as string,
-          stripeSubscriptionId: subscription.id,
-          stripeStatus: subscription.status,
-          currentPeriodEnd: periodEnd,
-        },
-      });
+      if (session.subscription) {
+        const subscription = await stripe.subscriptions.retrieve(
+          session.subscription as string,
+        );
+        const periodEnd = getPeriodEnd(subscription);
+
+        await prisma.userEntitlement.upsert({
+          where: { clerkUserId },
+          create: {
+            clerkUserId,
+            isPro: true,
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: subscription.id,
+            stripeStatus: subscription.status,
+            currentPeriodEnd: periodEnd,
+          },
+          update: {
+            isPro: true,
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: subscription.id,
+            stripeStatus: subscription.status,
+            currentPeriodEnd: periodEnd,
+          },
+        });
+      }
     }
-  }
 
-  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as Stripe.Subscription;
-    const clerkUserId = subscription.metadata?.clerkUserId;
+    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const clerkUserId = subscription.metadata?.clerkUserId;
 
-    if (clerkUserId) {
-      const isActive = ["active", "trialing"].includes(subscription.status);
-      const periodEnd = getPeriodEnd(subscription);
+      if (clerkUserId) {
+        const isActive = ["active", "trialing"].includes(subscription.status);
+        const periodEnd = getPeriodEnd(subscription);
 
-      await prisma.userEntitlement.upsert({
-        where: { clerkUserId },
-        create: {
-          clerkUserId,
-          isPro: isActive,
-          stripeSubscriptionId: subscription.id,
-          stripeCustomerId: subscription.customer as string,
-          stripeStatus: subscription.status,
-          currentPeriodEnd: periodEnd,
-        },
-        update: {
-          isPro: isActive,
-          stripeStatus: subscription.status,
-          currentPeriodEnd: periodEnd,
-        },
-      });
+        await prisma.userEntitlement.upsert({
+          where: { clerkUserId },
+          create: {
+            clerkUserId,
+            isPro: isActive,
+            stripeSubscriptionId: subscription.id,
+            stripeCustomerId: subscription.customer as string,
+            stripeStatus: subscription.status,
+            currentPeriodEnd: periodEnd,
+          },
+          update: {
+            isPro: isActive,
+            stripeStatus: subscription.status,
+            currentPeriodEnd: periodEnd,
+          },
+        });
+      }
     }
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
