@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model UserEntitlement {
+  id                     String    @id @default(cuid())
+  clerkUserId            String    @unique
+  isPro                  Boolean   @default(false)
+  stripeCustomerId       String?
+  stripeSubscriptionId   String?
+  stripeStatus           String    @default("none")
+  currentPeriodEnd       DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
